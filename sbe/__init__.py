@@ -116,6 +116,21 @@ class Type:
         rv += ")"
         return rv
 
+    def encode(self, val) -> bytes:
+
+        vals = [val]
+        fmt = ""
+        t1 = self.primitiveType
+        if self.presence == Presence.CONSTANT:
+            return b''
+        elif t1 == PrimitiveType.CHAR:
+                if self.length > 1:
+                    fmt = str(self.length) + "s"
+        else:
+            fmt = FORMAT[t1]
+
+        fmt = "<" + fmt
+        return struct.pack(fmt, *vals)
 
 @dataclass
 class EnumValue:
@@ -239,6 +254,17 @@ class Composite:
     def __repr__(self):
         return f"<Composite '{self.name}'>"
 
+    def encode(self, obj: dict) -> bytes:
+
+        ans = b''
+        for t in self.types:
+            if isinstance(t, Composite):
+                t_encoded = t.encode(obj[t.name])
+            else:
+                t_encoded = t.encode(obj[t.name])
+            ans = b''.join([ans, t_encoded])
+
+        return ans
 
 @dataclass
 class Set:
@@ -484,6 +510,17 @@ class Schema:
             _pack_composite(self, self.types['messageHeader'], header),
             struct.pack(fmt, *vals)
         ])
+
+    def encode_without_header(self, message: Message, obj: dict) -> bytes:
+        fmts = []
+        vals = []
+        cursor = Cursor(0)
+        _walk_fields_encode(self, message.blockLength, message.fields, obj, fmts, vals, cursor)
+        fmt = "<" + ''.join(fmts)
+        return struct.pack(fmt, *vals)
+
+    def decode_message_size(self, buffer: Union[bytes, memoryview]) -> dict:
+        return struct.unpack('<H', buffer)[0]
 
     def decode_header(self, buffer: Union[bytes, memoryview]) -> dict:
         buffer = memoryview(buffer)
